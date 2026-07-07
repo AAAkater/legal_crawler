@@ -46,10 +46,7 @@ async def fetch_search_page(
     Strips ``<em>`` highlight tags from titles so stored data is clean.
     """
     payload = _build_search_payload(page_num, flfg_code_ids, sxx_filter)
-    raw = await client.post_json(config.search_list_url, payload)
-
-    if not isinstance(raw, dict):
-        raise ValueError(f"Expected dict for search response, got {type(raw)}")
+    raw = await client.post(config.search_list_url, payload)
 
     rows = raw.get("rows", [])
     for row in rows:

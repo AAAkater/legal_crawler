@@ -18,13 +18,10 @@ async def fetch_batch_download_urls(
 
     Returns a typed ``BatchDownloadResponse`` model.
     """
-    raw = await client.post_json(
+    raw = await client.post(
         config.batch_download_url,
         json.loads(json.dumps(items)),  # ensure plain JSON
     )
-
-    if not isinstance(raw, dict):
-        raise ValueError(f"Expected dict for download response, got {type(raw)}")
 
     return BatchDownloadResponse.model_validate(raw)
 

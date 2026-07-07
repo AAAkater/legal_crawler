@@ -20,19 +20,12 @@ async def fetch_material_detail(
     bbbs: str,
 ) -> MaterialDetail:
     """Fetch detail for a related material and return a typed model."""
-    raw = await client.get_json(
+    raw = await client.get(
         config.material_detail_url,
         {"fileId": file_id, "bbbs": bbbs},
     )
 
-    if not isinstance(raw, dict):
-        raise ValueError(f"Expected dict for material response, got {type(raw)}")
-
-    data = raw.get("data")
-    if data is None:
-        raise ValueError("Material response missing 'data' field")
-
-    return MaterialDetail.model_validate(data)
+    return MaterialDetail.model_validate(raw["data"])
 
 
 def build_material_download_url(mat: MaterialDetail) -> str | None:

@@ -26,19 +26,6 @@ from tenacity import (
 from legal_crawler.config import config
 from legal_crawler.utils import logger
 
-# Errors worth retrying: transient network/timeout failures.
-_RETRYABLE: tuple[type[BaseException], ...] = (aiohttp.ClientError, asyncio.TimeoutError)
-
-# Default JSON headers for POST/GET API calls.
-_JSON_HEADERS: dict[str, str] = {
-    "Accept": "application/json, text/plain, */*",
-    "Content-Type": "application/json;charset=UTF-8",
-    "Referer": "https://flk.npc.gov.cn/search",
-    "User-Agent": (
-        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36"
-    ),
-}
-
 
 class HttpClient:
     """Async HTTP client wrapping ``aiohttp.ClientSession``.
@@ -53,10 +40,17 @@ class HttpClient:
         self._semaphore = asyncio.Semaphore(config.max_concurrency)
 
     # ── context-manager protocol ───────────────────────────────────
-    async def __aenter__(self) -> "HttpClient":
+    async def __aenter__(self):
         self._session = aiohttp.ClientSession(
             timeout=aiohttp.ClientTimeout(total=config.timeout),
-            headers=_JSON_HEADERS,
+            headers={
+                "Accept": "application/json, text/plain, */*",
+                "Content-Type": "application/json;charset=UTF-8",
+                "Referer": "https://flk.npc.gov.cn/search",
+                "User-Agent": (
+                    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36"
+                ),
+            },
         )
         return self
 
@@ -73,67 +67,57 @@ class HttpClient:
             raise RuntimeError("HttpClient used outside of 'async with'")
         return self._session
 
-    def _retrying(self) -> AsyncRetrying:
-        """Build a fresh ``AsyncRetrying`` instance for one call."""
-        return AsyncRetrying(
-            retry=retry_if_exception_type(_RETRYABLE),
-            stop=stop_after_attempt(config.max_retries),
-            wait=wait_exponential(multiplier=1, max=config.retry_max_wait),
-            reraise=True,
-        )
-
     async def _sleep(self) -> None:
         """Rate-limit between requests."""
         if config.request_delay > 0:
             await asyncio.sleep(config.request_delay)
 
+    def _retrying(self) -> AsyncRetrying:
+        """Build a fresh ``AsyncRetrying`` instance for one call."""
+        return AsyncRetrying(
+            retry=retry_if_exception_type((aiohttp.ClientError, asyncio.TimeoutError)),
+            stop=stop_after_attempt(config.max_retries),
+            wait=wait_exponential(multiplier=1, max=config.retry_max_wait),
+            reraise=True,
+        )
+
     # ── public API ─────────────────────────────────────────────────
-    async def post_json(self, url: str, payload: Any) -> dict[str, Any]:
+    async def post(self, url: str, payload: Any) -> dict[str, Any]:
         """POST a JSON payload and return the parsed JSON response (dict)."""
         async with self._semaphore:
-            return await self._post_json_with_retry(url, payload)
+            async for attempt in self._retrying():
+                with attempt:
+                    await self._sleep()
+                    logger.debug(f"POST {url}")
+                    async with self.session.post(url, json=payload) as resp:
+                        resp.raise_for_status()
+                        return await resp.json()
 
-    async def get_json(self, url: str, params: dict[str, str]) -> dict[str, Any]:
+            # Unreachable — reraise=True guarantees an exception escapes.
+            raise RuntimeError("unreachable")
+
+    async def get(self, url: str, params: dict[str, str]) -> dict[str, Any]:
         """GET with query params and return the parsed JSON response (dict)."""
         async with self._semaphore:
-            return await self._get_json_with_retry(url, params)
+            async for attempt in self._retrying():
+                with attempt:
+                    await self._sleep()
+                    logger.debug(f"GET {url} params={params}")
+                    async with self.session.get(url, params=params) as resp:
+                        resp.raise_for_status()
+                        return await resp.json()
+
+            raise RuntimeError("unreachable")
 
     async def get_bytes(self, url: str) -> bytes:
         """GET raw bytes (for file downloads)."""
         async with self._semaphore:
-            return await self._get_bytes_with_retry(url)
+            async for attempt in self._retrying():
+                with attempt:
+                    await self._sleep()
+                    logger.debug(f"GET (bytes) {url[:120]}")
+                    async with self.session.get(url) as resp:
+                        resp.raise_for_status()
+                        return await resp.read()
 
-    # ── retry-wrapped internals ────────────────────────────────────
-    async def _post_json_with_retry(self, url: str, payload: Any) -> dict[str, Any]:
-        async for attempt in self._retrying():
-            with attempt:
-                await self._sleep()
-                logger.debug(f"POST {url}")
-                async with self.session.post(url, json=payload) as resp:
-                    resp.raise_for_status()
-                    return await resp.json()
-
-        # Unreachable — reraise=True guarantees an exception escapes.
-        raise RuntimeError("unreachable")
-
-    async def _get_json_with_retry(self, url: str, params: dict[str, str]) -> dict[str, Any]:
-        async for attempt in self._retrying():
-            with attempt:
-                await self._sleep()
-                logger.debug(f"GET {url} params={params}")
-                async with self.session.get(url, params=params) as resp:
-                    resp.raise_for_status()
-                    return await resp.json()
-
-        raise RuntimeError("unreachable")
-
-    async def _get_bytes_with_retry(self, url: str) -> bytes:
-        async for attempt in self._retrying():
-            with attempt:
-                await self._sleep()
-                logger.debug(f"GET (bytes) {url[:120]}")
-                async with self.session.get(url) as resp:
-                    resp.raise_for_status()
-                    return await resp.read()
-
-        raise RuntimeError("unreachable")
+            raise RuntimeError("unreachable")

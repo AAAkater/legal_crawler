@@ -17,23 +17,15 @@ async def fetch_detail(client: HttpClient, bbbs: str) -> DocumentDetail:
     tags are stripped from the title and from any historical-version
     (``lsyg``) titles.
     """
-    raw = await client.get_json(config.detail_url, {"bbbs": bbbs})
+    raw = await client.get(config.detail_url, {"bbbs": bbbs})
 
-    if not isinstance(raw, dict):
-        raise ValueError(f"Expected dict for detail response, got {type(raw)}")
-
-    data = raw.get("data")
-    if data is None:
-        raise ValueError("Detail response missing 'data' field")
-
-    if isinstance(data, dict) and "title" in data:
+    data = raw["data"]
+    if "title" in data:
         data["title"] = strip_highlight_tags(data["title"])
 
     # Clean lsyg titles too
-    lsyg = data.get("lsyg") if isinstance(data, dict) else None
-    if isinstance(lsyg, list):
-        for item in lsyg:
-            if isinstance(item, dict) and "title" in item:
-                item["title"] = strip_highlight_tags(item["title"])
+    for item in data.get("lsyg", []):
+        if "title" in item:
+            item["title"] = strip_highlight_tags(item["title"])
 
     return DocumentDetail.model_validate(data)
