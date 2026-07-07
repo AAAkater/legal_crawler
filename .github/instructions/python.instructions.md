@@ -5,11 +5,22 @@ applyTo: "**/*.py"
 
 # Python Coding Guidelines
 
+## Import Style
+
+- **Always use absolute imports**: `from legal_crawler.config import config` — never `from .config import config`.
+- **Do NOT use `from __future__ import annotations`**: Python 3.13 supports `X | Y` natively.
+
+## Logging
+
+- **Use `loguru`**: `from loguru import logger` — never use the stdlib `logging` module.
+- **No wrapper function**: Import `logger` directly from `loguru` in each module that needs it.
+- **Log levels**: `logger.debug()` for HTTP details, `logger.info()` for saved files and progress, `logger.warning()` for skipped items, `logger.error()` for failures.
+
 ## Async Patterns
 
 - **IO layers use `async def`**: `fetcher.py`, `storage.py`, `pipeline.py` — all network and file operations are async.
 - **Pure compute is sync**: `parser.py` functions are synchronous. Don't make CPU-bound functions async.
-- **Entry point**: Use `asyncio.run(main())` in `__main__.py`. The `main()` function is `async def`.
+- **Entry point**: Use `asyncio.run(main())` in `main.py`. The `main()` function is `async def`.
 - **Concurrency**: Use `asyncio.gather()` for batch operations. Always pair with `asyncio.Semaphore` to limit concurrency and avoid getting blocked.
 
 ## aiohttp Usage
@@ -36,7 +47,7 @@ html = resp.text  # missing await, missing context manager
 
 - **All functions need complete annotations**: parameters and return types. ty runs in strict mode (`all = "error"`).
 - **No bare generics**: Use `list[str]` not `list`, `dict[str, int]` not `dict`, `tuple[int, ...]` not `tuple`.
-- **Use `from __future__ import annotations`** if needed for forward references, but prefer modern syntax (Python 3.13 supports `X | Y` natively).
+- **Do NOT use `from __future__ import annotations`**: Python 3.13 supports `X | Y` natively. Write annotations directly.
 
 ## Retry Strategy
 

@@ -11,6 +11,7 @@ Asynchronous crawler for Chinese legal documents (laws, judicial interpretations
 - **Parsing**: BeautifulSoup4 + lxml
 - **Models**: Pydantic v2
 - **Retry**: tenacity (`AsyncRetrying`)
+- **Logging**: loguru (`from loguru import logger`)
 - **Type checking**: ty (strict mode, `all = "error"`)
 - **Linting**: ruff (config in `ruff.toml`, user-managed)
 - **Package manager**: uv
@@ -46,6 +47,9 @@ uv run pytest -vv                # Run pytest
 - **IO layers are async**: `fetcher`, `storage`, `pipeline` use `async def`. Entry point uses `asyncio.run()`.
 - **Pure compute is sync**: `parser` functions are synchronous — no network/file IO.
 - **All data models are Pydantic**: Define schemas in `models.py`, not inline dicts.
-- **No business logic in `utils.py`**: Only generic helpers (logging setup, path normalization).
+- **No business logic in `utils.py`**: Only generic helpers (path normalization, filename building).
+- **Absolute imports only**: `from legal_crawler.config import config` — never `from .config import config`.
+- **No `from __future__ import annotations`**: Python 3.13 supports `X | Y` natively.
+- **Logging via loguru**: `from loguru import logger` — never use stdlib `logging`.
 - **Output format**: Match existing `assets/datasets/` conventions (e.g., `中华人民共和国刑法_20201226.txt`).
 - **Don't duplicate linter-enforced rules here**: ruff and ty configs handle formatting, import order, type annotations. These guidelines cover what linters can't enforce.
