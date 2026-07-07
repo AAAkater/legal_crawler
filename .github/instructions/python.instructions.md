@@ -12,14 +12,15 @@ applyTo: "**/*.py"
 
 ## Logging
 
-- **Use `loguru`**: `from loguru import logger` — never use the stdlib `logging` module.
-- **No wrapper function**: Import `logger` directly from `loguru` in each module that needs it.
+- **Use `loguru`**: never use the stdlib `logging` module.
+- **Import logger from `legal_crawler.utils`**: `from legal_crawler.utils import logger` — this configures the sinks (stderr + `crawler.log`) on first import. Never `from loguru import logger` in business modules (only `utils/logging.py` does that).
+- **No wrapper function**: Don't define a `setup_logging()`-style function. Sink configuration runs at import time via `legal_crawler.utils.logging`.
 - **Log levels**: `logger.debug()` for HTTP details, `logger.info()` for saved files and progress, `logger.warning()` for skipped items, `logger.error()` for failures.
-- **Use f-strings for log messages**: `logger.info(f"Saved {count} files")` — never use loguru's `{}` placeholder syntax with positional args (`logger.info("Saved {} files", count)`).
+- **Use f-strings for log messages**: `logger.info(f"Saved {count} files")` — never use loguru's `{}` placeholder syntax with positional args (`logger.info("Saved {} files", count)`), nor printf-style `%s` (`logger.info("Saved %s files", count)`).
 
 ## Async Patterns
 
-- **IO layers use `async def`**: `fetcher.py`, `storage.py`, `pipeline.py` — all network and file operations are async.
+- **IO layers use `async def`**: `api/client.py`, `storage.py`, `pipeline.py` — all network and file operations are async.
 - **Pure compute is sync**: `parser.py` functions are synchronous. Don't make CPU-bound functions async.
 - **Entry point**: Use `asyncio.run(main())` in `main.py`. The `main()` function is `async def`.
 - **Concurrency**: Use `asyncio.gather()` for batch operations. Always pair with `asyncio.Semaphore` to limit concurrency and avoid getting blocked.
