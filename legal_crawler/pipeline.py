@@ -61,17 +61,19 @@ async def process_document(client: HttpClient, row: SearchResultRow) -> Document
     """Fetch and store detail + download file for a single document."""
     try:
         # Skip if detail JSON already exists
-        if await detail_json_exists(row.title, row.gbrq):
+        if await detail_json_exists(row.title, row.publish_date):
             logger.debug(f"Skipping (already saved): {row.title}")
             return None
 
         # Fetch detail (typed)
-        detail = await fetch_detail(client, row.bbbs)
+        detail = await fetch_detail(client, row.id)
         logger.info(
-            f"Detail: {detail.title} | sxx={detail.sxx} | lsyg={len(detail.lsyg or [])} | xgzl={len(detail.xgzl)}"
+            f"Detail: {detail.title} | effectiveness={detail.effectiveness} | "
+            f"historical={len(detail.historical_versions or [])} | "
+            f"materials={len(detail.related_materials)}"
         )
 
-        # Save detail JSON (includes lsyg, xgzl metadata)
+        # Save detail JSON (includes historical_versions, related_materials metadata)
         await save_detail_json(detail)
 
         # Download the main document file
@@ -79,7 +81,7 @@ async def process_document(client: HttpClient, row: SearchResultRow) -> Document
             await _download_document_file(client, detail)
 
         # Download related materials
-        if config.download_materials and detail.xgzl:
+        if config.download_materials and detail.related_materials:
             await _download_materials(client, detail)
 
         return detail
@@ -91,23 +93,23 @@ async def process_document(client: HttpClient, row: SearchResultRow) -> Document
 
 async def _download_document_file(client: HttpClient, detail: DocumentDetail) -> None:
     """Download the main document file via batch-download API."""
-    if await file_exists(detail.title, detail.gbrq, config.download_format):
+    if await file_exists(detail.title, detail.publish_date, config.download_format):
         logger.debug(f"Document file already exists: {detail.title}")
         return
 
-    data = await download_document_bytes(client, detail.bbbs, config.download_format)
+    data = await download_document_bytes(client, detail.id, config.download_format)
     if data is None:
         logger.warning(f"No download URL returned for: {detail.title}")
         return
 
-    await save_document_file(detail.title, detail.gbrq, config.download_format, data)
+    await save_document_file(detail.title, detail.publish_date, config.download_format, data)
 
 
 async def _download_materials(client: HttpClient, detail: DocumentDetail) -> None:
     """Download all related materials (xgzl) for a document."""
-    for mat in detail.xgzl:
+    for mat in detail.related_materials:
         try:
-            mat_detail = await fetch_material_detail(client, mat.file_id, detail.bbbs)
+            mat_detail = await fetch_material_detail(client, mat.file_id, detail.id)
 
             dl_url = build_material_download_url(mat_detail)
             if dl_url is None:
@@ -129,11 +131,11 @@ async def process_historical_versions(client: HttpClient, detail: DocumentDetail
     via the same detail API.  This preserves the full version history
     needed for DPO chosen/rejected pairs.
     """
-    if not detail.lsyg or not config.download_historical:
+    if not detail.historical_versions or not config.download_historical:
         return []
 
     # Skip the current version (it's already in detail)
-    historical = [v for v in detail.lsyg if v.bbbs != detail.bbbs]
+    historical = [v for v in detail.historical_versions if v.id != detail.id]
     if not historical:
         return []
 
@@ -148,21 +150,21 @@ async def process_historical_versions(client: HttpClient, detail: DocumentDetail
 async def _fetch_historical_detail(client: HttpClient, version: HistoricalVersion) -> DocumentDetail | None:
     """Fetch and store a single historical version."""
     try:
-        if await detail_json_exists(version.title, version.gbrq):
-            logger.debug(f"Historical detail already saved: {version.title} {version.gbrq}")
+        if await detail_json_exists(version.title, version.publish_date):
+            logger.debug(f"Historical detail already saved: {version.title} {version.publish_date}")
             return None
 
-        hist_detail = await fetch_detail(client, version.bbbs)
+        hist_detail = await fetch_detail(client, version.id)
         await save_detail_json(hist_detail)
 
         if config.download_documents and hist_detail.oss_file:
             await _download_document_file(client, hist_detail)
 
-        logger.info(f"Historical version saved: {version.title} ({version.gbrq})")
+        logger.info(f"Historical version saved: {version.title} ({version.publish_date})")
         return hist_detail
 
     except Exception:
-        logger.exception(f"Failed to fetch historical version: {version.title} {version.gbrq}")
+        logger.exception(f"Failed to fetch historical version: {version.title} {version.publish_date}")
         return None
 
 

@@ -46,7 +46,7 @@ class RelatedDocument(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    bbbs: str
+    id: str = Field(alias="bbbs")
     title: str
 
 
@@ -55,9 +55,9 @@ class HistoricalVersion(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    bbbs: str
+    id: str = Field(alias="bbbs")
     title: str
-    gbrq: str  # 公布日期, e.g. "2020-12-29"
+    publish_date: str = Field(alias="gbrq", description="公布日期, e.g. '2020-12-29'")
     highlight: bool = Field(default=False, alias="highLight")
 
 
@@ -69,7 +69,7 @@ class RelatedMaterial(BaseModel):
     file_id: str = Field(alias="fileId")
     title: str
     title_highlight: str | None = Field(default=None, alias="titleHighLight")
-    busi_type: str = Field(alias="busiType")
+    business_type: str = Field(alias="busiType")
     file_type: str = Field(alias="fileType")
     title_highlight_list: list[dict[str, Any]] | None = Field(default=None, alias="titleHightLightList")
 
@@ -79,15 +79,15 @@ class SearchResultRow(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    bbbs: str
+    id: str = Field(alias="bbbs")
     title: str
-    gbrq: str  # 公布日期
-    sxrq: str | None = None  # 施行日期
-    sxx: int | None = None  # 时效性 (see Effectiveness)
-    zdjg_name: str = Field(alias="zdjgName")  # 制定机关
-    flxz: str  # 法律法规分类
-    zdjg_code_id: int = Field(alias="zdjgCodeId")
-    flfg_code_id: int = Field(alias="flfgCodeId")
+    publish_date: str = Field(alias="gbrq", description="公布日期")
+    effective_date: str | None = Field(default=None, alias="sxrq", description="施行日期")
+    effectiveness: int | None = Field(default=None, alias="sxx", description="时效性 (see Effectiveness)")
+    issuing_authority: str = Field(alias="zdjgName", description="制定机关")
+    category: str = Field(alias="flxz", description="法律法规分类")
+    authority_code_id: int = Field(alias="zdjgCodeId")
+    law_code_id: int = Field(alias="flfgCodeId")
 
 
 class SearchResponse(BaseModel):
@@ -104,19 +104,19 @@ class DocumentDetail(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    bbbs: str
+    id: str = Field(alias="bbbs")
     title: str
-    gbrq: str  # 公布日期
-    sxrq: str | None = None  # 施行日期
-    sxx: int | None = None  # 时效性
-    zdjg_name: str = Field(alias="zdjgName")
-    flxz: str  # 法律法规分类
+    publish_date: str = Field(alias="gbrq", description="公布日期")
+    effective_date: str | None = Field(default=None, alias="sxrq", description="施行日期")
+    effectiveness: int | None = Field(default=None, alias="sxx", description="时效性")
+    issuing_authority: str = Field(alias="zdjgName", description="制定机关")
+    category: str = Field(alias="flxz", description="法律法规分类")
     oss_file: OssFile | None = Field(default=None, alias="ossFile")
-    xgwj: list[RelatedDocument] = Field(default_factory=list)  # 相关文件
-    lsyg: list[HistoricalVersion] | None = None  # 历史版本
-    xgzl: list[RelatedMaterial] = Field(default_factory=list)  # 相关资料
+    related_documents: list[RelatedDocument] = Field(default_factory=list, alias="xgwj", description="相关文件")
+    historical_versions: list[HistoricalVersion] | None = Field(default=None, alias="lsyg", description="历史版本")
+    related_materials: list[RelatedMaterial] = Field(default_factory=list, alias="xgzl", description="相关资料")
     content: str | None = None
-    xf_flag: int = Field(default=0, alias="xfFlag")
+    repealed_flag: int = Field(default=0, alias="xfFlag")
 
 
 class DownloadUrl(BaseModel):
@@ -124,8 +124,8 @@ class DownloadUrl(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    url: str  # public OSS URL
-    url_in: str | None = Field(default=None, alias="urlIn")  # internal URL
+    url: str = Field(description="public OSS URL")
+    url_in: str | None = Field(default=None, alias="urlIn", description="internal URL")
 
 
 class BatchDownloadResponse(BaseModel):
@@ -145,7 +145,7 @@ class MaterialDetail(BaseModel):
 
     file_id: str = Field(alias="fileId")
     title: str
-    busi_type: str | None = Field(default=None, alias="busiType")
+    business_type: str | None = Field(default=None, alias="busiType")
     oss_file_path: str | None = Field(default=None, alias="ossFilePath")
     oss_ofd_path: str | None = Field(default=None, alias="ossOfdPath")
     oss_ofd_size: int | None = Field(default=None, alias="ossOfdSize")

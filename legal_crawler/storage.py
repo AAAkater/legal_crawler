@@ -38,7 +38,7 @@ async def save_material_file(title: str, ext: str, data: bytes) -> Path:
 
 async def save_detail_json(detail: DocumentDetail) -> Path:
     """Save a document's full detail (including lsyg) as JSON."""
-    filename = build_document_filename(detail.title, detail.gbrq, "json")
+    filename = build_document_filename(detail.title, detail.publish_date, "json")
     path = ensure_dir(config.documents_dir) / filename
     path.write_text(
         detail.model_dump_json(by_alias=True, indent=2),
