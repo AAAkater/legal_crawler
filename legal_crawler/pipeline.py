@@ -46,16 +46,16 @@ async def collect_search_rows(fetcher: Fetcher) -> list[SearchResultRow]:
     resp = parse_search_response(raw)
     total = resp.total
     all_rows.extend(resp.rows)
-    logger.info("Search total: {} documents (page {}/{})", total, page_num, _total_pages(total))
+    logger.info(f"Search total: {total} documents (page {page_num}/{_total_pages(total)})")
 
     total_pages = _total_pages(total)
     for page_num in range(2, total_pages + 1):
         raw = await fetcher.fetch_search_page(page_num)
         resp = parse_search_response(raw)
         all_rows.extend(resp.rows)
-        logger.info("Fetched page {}/{} ({} rows)", page_num, total_pages, len(resp.rows))
+        logger.info(f"Fetched page {page_num}/{total_pages} ({len(resp.rows)} rows)")
 
-    logger.info("Collected {} rows across {} pages", len(all_rows), total_pages)
+    logger.info(f"Collected {len(all_rows)} rows across {total_pages} pages")
     return all_rows
 
 
@@ -69,18 +69,14 @@ async def process_document(fetcher: Fetcher, row: SearchResultRow) -> DocumentDe
     try:
         # Skip if detail JSON already exists
         if await detail_json_exists(row.title, row.gbrq):
-            logger.debug("Skipping (already saved): {}", row.title)
+            logger.debug(f"Skipping (already saved): {row.title}")
             return None
 
         # Fetch detail
         raw = await fetcher.fetch_detail(row.bbbs)
         detail = parse_detail(raw)
         logger.info(
-            "Detail: {} | sxx={} | lsyg={} | xgzl={}",
-            detail.title,
-            detail.sxx,
-            len(detail.lsyg or []),
-            len(detail.xgzl),
+            f"Detail: {detail.title} | sxx={detail.sxx} | lsyg={len(detail.lsyg or [])} | xgzl={len(detail.xgzl)}"
         )
 
         # Save detail JSON (includes lsyg, xgzl metadata)
@@ -97,14 +93,14 @@ async def process_document(fetcher: Fetcher, row: SearchResultRow) -> DocumentDe
         return detail
 
     except Exception:
-        logger.exception("Failed to process document: {}", row.title)
+        logger.exception(f"Failed to process document: {row.title}")
         return None
 
 
 async def _download_document_file(fetcher: Fetcher, detail: DocumentDetail) -> None:
     """Download the main document file via batch-download API."""
     if await file_exists(detail.title, detail.gbrq, config.download_format):
-        logger.debug("Document file already exists: {}", detail.title)
+        logger.debug(f"Document file already exists: {detail.title}")
         return
 
     items = [{"bbbs": detail.bbbs, "format": config.download_format}]
@@ -112,7 +108,7 @@ async def _download_document_file(fetcher: Fetcher, detail: DocumentDetail) -> N
     dl_resp = parse_batch_download(raw)
 
     if not dl_resp.data:
-        logger.warning("No download URL returned for: {}", detail.title)
+        logger.warning(f"No download URL returned for: {detail.title}")
         return
 
     url = dl_resp.data[0].url
@@ -128,7 +124,7 @@ async def _download_materials(fetcher: Fetcher, detail: DocumentDetail) -> None:
             mat_detail: MaterialDetail = parse_material_detail(raw)
 
             if not mat_detail.oss_file_path:
-                logger.warning("No file path for material: {}", mat.title)
+                logger.warning(f"No file path for material: {mat.title}")
                 continue
 
             # Build download URL from OSS path
@@ -137,7 +133,7 @@ async def _download_materials(fetcher: Fetcher, detail: DocumentDetail) -> None:
             # We use the download/pc endpoint instead.
             dl_url = _build_material_download_url(mat_detail)
             if dl_url is None:
-                logger.warning("Cannot build download URL for material: {}", mat.title)
+                logger.warning(f"Cannot build download URL for material: {mat.title}")
                 continue
 
             data = await fetcher.get_bytes(dl_url)
@@ -145,7 +141,7 @@ async def _download_materials(fetcher: Fetcher, detail: DocumentDetail) -> None:
             await save_material_file(mat.title, ext, data)
 
         except Exception:
-            logger.exception("Failed to download material: {}", mat.title)
+            logger.exception(f"Failed to download material: {mat.title}")
 
 
 def _build_material_download_url(mat: MaterialDetail) -> str | None:
@@ -178,11 +174,7 @@ async def process_historical_versions(fetcher: Fetcher, detail: DocumentDetail) 
     if not historical:
         return []
 
-    logger.info(
-        "Processing {} historical versions for: {}",
-        len(historical),
-        detail.title,
-    )
+    logger.info(f"Processing {len(historical)} historical versions for: {detail.title}")
 
     tasks = [_fetch_historical_detail(fetcher, v) for v in historical]
     results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -194,7 +186,7 @@ async def _fetch_historical_detail(fetcher: Fetcher, version: HistoricalVersion)
     """Fetch and store a single historical version."""
     try:
         if await detail_json_exists(version.title, version.gbrq):
-            logger.debug("Historical detail already saved: {} {}", version.title, version.gbrq)
+            logger.debug(f"Historical detail already saved: {version.title} {version.gbrq}")
             return None
 
         raw = await fetcher.fetch_detail(version.bbbs)
@@ -204,11 +196,11 @@ async def _fetch_historical_detail(fetcher: Fetcher, version: HistoricalVersion)
         if config.download_documents and hist_detail.oss_file:
             await _download_document_file(fetcher, hist_detail)
 
-        logger.info("Historical version saved: {} ({})", version.title, version.gbrq)
+        logger.info(f"Historical version saved: {version.title} ({version.gbrq})")
         return hist_detail
 
     except Exception:
-        logger.exception("Failed to fetch historical version: {} {}", version.title, version.gbrq)
+        logger.exception(f"Failed to fetch historical version: {version.title} {version.gbrq}")
         return None
 
 
@@ -232,4 +224,4 @@ async def run_pipeline() -> None:
 
         await asyncio.gather(*(process_with_sem(r) for r in rows))
 
-    logger.info("Crawler finished — {} documents processed", len(rows))
+    logger.info(f"Crawler finished — {len(rows)} documents processed")

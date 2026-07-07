@@ -103,7 +103,7 @@ class Fetcher:
         async for attempt in self._retrying():
             with attempt:
                 await self._sleep()
-                logger.debug("POST %s", url)
+                logger.debug(f"POST {url}")
                 async with self.session.post(url, json=payload) as resp:
                     resp.raise_for_status()
                     return await resp.json()
@@ -115,7 +115,7 @@ class Fetcher:
         async for attempt in self._retrying():
             with attempt:
                 await self._sleep()
-                logger.debug("GET %s params=%s", url, params)
+                logger.debug(f"GET {url} params={params}")
                 async with self.session.get(url, params=params) as resp:
                     resp.raise_for_status()
                     return await resp.json()
@@ -126,7 +126,7 @@ class Fetcher:
         async for attempt in self._retrying():
             with attempt:
                 await self._sleep()
-                logger.debug("GET (bytes) %s", url[:120])
+                logger.debug(f"GET (bytes) {url[:120]}")
                 async with self.session.get(url) as resp:
                     resp.raise_for_status()
                     return await resp.read()

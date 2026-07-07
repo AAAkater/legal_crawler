@@ -15,6 +15,7 @@ applyTo: "**/*.py"
 - **Use `loguru`**: `from loguru import logger` — never use the stdlib `logging` module.
 - **No wrapper function**: Import `logger` directly from `loguru` in each module that needs it.
 - **Log levels**: `logger.debug()` for HTTP details, `logger.info()` for saved files and progress, `logger.warning()` for skipped items, `logger.error()` for failures.
+- **Use f-strings for log messages**: `logger.info(f"Saved {count} files")` — never use loguru's `{}` placeholder syntax with positional args (`logger.info("Saved {} files", count)`).
 
 ## Async Patterns
 

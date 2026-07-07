@@ -24,7 +24,7 @@ async def save_document_file(title: str, gbrq: str, ext: str, data: bytes) -> Pa
     filename = build_document_filename(title, gbrq, ext)
     path = ensure_dir(config.documents_dir) / filename
     path.write_bytes(data)
-    logger.info("Saved document: %s (%d bytes)", path.name, len(data))
+    logger.info(f"Saved document: {path.name} ({len(data)} bytes)")
     return path
 
 
@@ -33,7 +33,7 @@ async def save_material_file(title: str, ext: str, data: bytes) -> Path:
     filename = build_material_filename(title, ext)
     path = ensure_dir(config.materials_dir) / filename
     path.write_bytes(data)
-    logger.info("Saved material: %s (%d bytes)", path.name, len(data))
+    logger.info(f"Saved material: {path.name} ({len(data)} bytes)")
     return path
 
 
@@ -45,7 +45,7 @@ async def save_detail_json(detail: DocumentDetail) -> Path:
         detail.model_dump_json(by_alias=True, indent=2),
         encoding="utf-8",
     )
-    logger.debug("Saved detail JSON: %s", path.name)
+    logger.debug(f"Saved detail JSON: {path.name}")
     return path
 
 
@@ -61,7 +61,7 @@ async def save_index(rows: list[SearchResultRow]) -> Path:
         json.dumps(payload, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
-    logger.info("Saved index: %s (%d rows)", path.name, len(rows))
+    logger.info(f"Saved index: {path.name} ({len(rows)} rows)")
     return path
 
 
