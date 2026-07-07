@@ -10,8 +10,6 @@ Coordinates the full crawl:
 
 import asyncio
 
-from loguru import logger
-
 from legal_crawler.api import (
     HttpClient,
     build_material_download_url,
@@ -30,6 +28,7 @@ from legal_crawler.storage import (
     save_index,
     save_material_file,
 )
+from legal_crawler.utils import logger
 
 
 async def collect_search_rows(client: HttpClient) -> list[SearchResultRow]:

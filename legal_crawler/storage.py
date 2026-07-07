@@ -8,14 +8,13 @@ import json
 from pathlib import Path
 from typing import Any
 
-from loguru import logger
-
 from legal_crawler.config import config
 from legal_crawler.models import DocumentDetail, SearchResultRow
 from legal_crawler.utils import (
     build_document_filename,
     build_material_filename,
     ensure_dir,
+    logger,
 )
 
 

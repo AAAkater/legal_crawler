@@ -16,7 +16,6 @@ import asyncio
 from typing import Any
 
 import aiohttp
-from loguru import logger
 from tenacity import (
     AsyncRetrying,
     retry_if_exception_type,
@@ -25,6 +24,7 @@ from tenacity import (
 )
 
 from legal_crawler.config import config
+from legal_crawler.utils import logger
 
 # Errors worth retrying: transient network/timeout failures.
 _RETRYABLE: tuple[type[BaseException], ...] = (aiohttp.ClientError, asyncio.TimeoutError)
