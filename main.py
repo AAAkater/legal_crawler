@@ -2,10 +2,17 @@
 
 import asyncio
 
+from loguru import logger
+
+from legal_crawler.pipeline import run_pipeline
+from legal_crawler.utils import setup_logging
+
 
 async def main() -> None:
     """Run the crawler pipeline."""
-    print("Hello from legal-crawler!")
+    setup_logging()
+    logger.info("Legal crawler starting up")
+    await run_pipeline()
 
 
 if __name__ == "__main__":
