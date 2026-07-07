@@ -1,12 +1,18 @@
-"""Asynchronous HTTP fetcher layer.
+"""Asynchronous HTTP client (low-level transport).
 
-All network IO lives here.  Uses ``aiohttp.ClientSession`` with
-context managers, explicit timeouts, and ``tenacity.AsyncRetrying``
-for retry logic.
+Wraps ``aiohttp.ClientSession`` with retry logic (tenacity),
+concurrency limiting (semaphore), and rate limiting.  This is the
+Python equivalent of the TS ``api/client.ts`` — it knows nothing
+about business endpoints, only how to perform typed GET/POST/bytes
+requests reliably.
+
+Use as an async context manager::
+
+    async with HttpClient() as client:
+        data = await client.post_json(url, payload)
 """
 
 import asyncio
-import json
 from typing import Any
 
 import aiohttp
@@ -20,8 +26,8 @@ from tenacity import (
 
 from legal_crawler.config import config
 
-# Errors that are worth retrying.
-_RETRYABLE = (aiohttp.ClientError, asyncio.TimeoutError)
+# Errors worth retrying: transient network/timeout failures.
+_RETRYABLE: tuple[type[BaseException], ...] = (aiohttp.ClientError, asyncio.TimeoutError)
 
 # Default JSON headers for POST/GET API calls.
 _JSON_HEADERS: dict[str, str] = {
@@ -34,13 +40,12 @@ _JSON_HEADERS: dict[str, str] = {
 }
 
 
-class Fetcher:
+class HttpClient:
     """Async HTTP client wrapping ``aiohttp.ClientSession``.
 
-    Use as an async context manager::
-
-        async with Fetcher() as fetcher:
-            data = await fetcher.post_json(url, payload)
+    Provides retry-wrapped ``post_json`` / ``get_json`` / ``get_bytes``
+    primitives.  All requests pass through a semaphore (concurrency
+    limit) and an optional rate-limit sleep.
     """
 
     def __init__(self) -> None:
@@ -48,7 +53,7 @@ class Fetcher:
         self._semaphore = asyncio.Semaphore(config.max_concurrency)
 
     # ── context-manager protocol ───────────────────────────────────
-    async def __aenter__(self) -> "Fetcher":
+    async def __aenter__(self) -> "HttpClient":
         self._session = aiohttp.ClientSession(
             timeout=aiohttp.ClientTimeout(total=config.timeout),
             headers=_JSON_HEADERS,
@@ -65,7 +70,7 @@ class Fetcher:
     def session(self) -> aiohttp.ClientSession:
         """Return the active session or raise if used outside ``async with``."""
         if self._session is None:
-            raise RuntimeError("Fetcher used outside of 'async with'")
+            raise RuntimeError("HttpClient used outside of 'async with'")
         return self._session
 
     def _retrying(self) -> AsyncRetrying:
@@ -83,13 +88,13 @@ class Fetcher:
             await asyncio.sleep(config.request_delay)
 
     # ── public API ─────────────────────────────────────────────────
-    async def post_json(self, url: str, payload: Any) -> Any:
-        """POST a JSON payload and return the parsed JSON response."""
+    async def post_json(self, url: str, payload: Any) -> dict[str, Any]:
+        """POST a JSON payload and return the parsed JSON response (dict)."""
         async with self._semaphore:
             return await self._post_json_with_retry(url, payload)
 
-    async def get_json(self, url: str, params: dict[str, str]) -> Any:
-        """GET with query params and return the parsed JSON response."""
+    async def get_json(self, url: str, params: dict[str, str]) -> dict[str, Any]:
+        """GET with query params and return the parsed JSON response (dict)."""
         async with self._semaphore:
             return await self._get_json_with_retry(url, params)
 
@@ -99,7 +104,7 @@ class Fetcher:
             return await self._get_bytes_with_retry(url)
 
     # ── retry-wrapped internals ────────────────────────────────────
-    async def _post_json_with_retry(self, url: str, payload: Any) -> Any:
+    async def _post_json_with_retry(self, url: str, payload: Any) -> dict[str, Any]:
         async for attempt in self._retrying():
             with attempt:
                 await self._sleep()
@@ -111,7 +116,7 @@ class Fetcher:
         # Unreachable — reraise=True guarantees an exception escapes.
         raise RuntimeError("unreachable")
 
-    async def _get_json_with_retry(self, url: str, params: dict[str, str]) -> Any:
+    async def _get_json_with_retry(self, url: str, params: dict[str, str]) -> dict[str, Any]:
         async for attempt in self._retrying():
             with attempt:
                 await self._sleep()
@@ -132,46 +137,3 @@ class Fetcher:
                     return await resp.read()
 
         raise RuntimeError("unreachable")
-
-    # ── high-level convenience methods ─────────────────────────────
-    async def fetch_search_page(
-        self,
-        page_num: int,
-        flfg_code_ids: list[int] | None = None,
-        sxx_filter: list[int] | None = None,
-    ) -> Any:
-        """Fetch one page of the search-list API."""
-        payload: dict[str, Any] = {
-            "searchRange": 1,
-            "sxrq": [],
-            "gbrq": [],
-            "searchType": 2,
-            "sxx": sxx_filter if sxx_filter is not None else config.sxx_filter,
-            "gbrqYear": [],
-            "flfgCodeId": flfg_code_ids if flfg_code_ids is not None else config.flfg_code_ids,
-            "zdjgCodeId": [],
-            "searchContent": "",
-            "xgzlSearch": False,
-            "orderByParam": {"order": "-1", "sort": ""},
-            "pageNum": page_num,
-            "pageSize": config.page_size,
-        }
-        return await self.post_json(config.search_list_url, payload)
-
-    async def fetch_detail(self, bbbs: str) -> Any:
-        """Fetch document detail for *bbbs*."""
-        return await self.get_json(config.detail_url, {"bbbs": bbbs})
-
-    async def fetch_batch_download_urls(self, items: list[dict[str, str]]) -> Any:
-        """Fetch download URLs for a batch of ``[{"bbbs": ..., "format": ...}]``."""
-        return await self.post_json(
-            config.batch_download_url,
-            json.loads(json.dumps(items)),  # ensure plain JSON
-        )
-
-    async def fetch_material_detail(self, file_id: str, bbbs: str) -> Any:
-        """Fetch detail for a related material."""
-        return await self.get_json(
-            config.material_detail_url,
-            {"fileId": file_id, "bbbs": bbbs},
-        )

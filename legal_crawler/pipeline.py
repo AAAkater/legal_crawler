@@ -1,4 +1,4 @@
-"""Async pipeline orchestration (fetcher -> parser -> storage).
+"""Async pipeline orchestration (api -> storage).
 
 Coordinates the full crawl:
 1. Paginate the search API to collect all judicial-interpretation rows.
@@ -12,20 +12,16 @@ import asyncio
 
 from loguru import logger
 
+from legal_crawler.api import (
+    HttpClient,
+    build_material_download_url,
+    download_document_bytes,
+    fetch_detail,
+    fetch_material_detail,
+    fetch_search_page,
+)
 from legal_crawler.config import config
-from legal_crawler.fetcher import Fetcher
-from legal_crawler.models import (
-    DocumentDetail,
-    HistoricalVersion,
-    MaterialDetail,
-    SearchResultRow,
-)
-from legal_crawler.parser import (
-    parse_batch_download,
-    parse_detail,
-    parse_material_detail,
-    parse_search_response,
-)
+from legal_crawler.models import DocumentDetail, HistoricalVersion, SearchResultRow
 from legal_crawler.storage import (
     detail_json_exists,
     file_exists,
@@ -36,22 +32,20 @@ from legal_crawler.storage import (
 )
 
 
-async def collect_search_rows(fetcher: Fetcher) -> list[SearchResultRow]:
+async def collect_search_rows(client: HttpClient) -> list[SearchResultRow]:
     """Paginate the search API and return all rows."""
     all_rows: list[SearchResultRow] = []
 
     # First page to learn total count
     page_num = 1
-    raw = await fetcher.fetch_search_page(page_num)
-    resp = parse_search_response(raw)
+    resp = await fetch_search_page(client, page_num)
     total = resp.total
     all_rows.extend(resp.rows)
     logger.info(f"Search total: {total} documents (page {page_num}/{_total_pages(total)})")
 
     total_pages = _total_pages(total)
     for page_num in range(2, total_pages + 1):
-        raw = await fetcher.fetch_search_page(page_num)
-        resp = parse_search_response(raw)
+        resp = await fetch_search_page(client, page_num)
         all_rows.extend(resp.rows)
         logger.info(f"Fetched page {page_num}/{total_pages} ({len(resp.rows)} rows)")
 
@@ -64,7 +58,7 @@ def _total_pages(total: int) -> int:
     return (total + config.page_size - 1) // config.page_size
 
 
-async def process_document(fetcher: Fetcher, row: SearchResultRow) -> DocumentDetail | None:
+async def process_document(client: HttpClient, row: SearchResultRow) -> DocumentDetail | None:
     """Fetch and store detail + download file for a single document."""
     try:
         # Skip if detail JSON already exists
@@ -72,9 +66,8 @@ async def process_document(fetcher: Fetcher, row: SearchResultRow) -> DocumentDe
             logger.debug(f"Skipping (already saved): {row.title}")
             return None
 
-        # Fetch detail
-        raw = await fetcher.fetch_detail(row.bbbs)
-        detail = parse_detail(raw)
+        # Fetch detail (typed)
+        detail = await fetch_detail(client, row.bbbs)
         logger.info(
             f"Detail: {detail.title} | sxx={detail.sxx} | lsyg={len(detail.lsyg or [])} | xgzl={len(detail.xgzl)}"
         )
@@ -84,11 +77,11 @@ async def process_document(fetcher: Fetcher, row: SearchResultRow) -> DocumentDe
 
         # Download the main document file
         if config.download_documents and detail.oss_file:
-            await _download_document_file(fetcher, detail)
+            await _download_document_file(client, detail)
 
         # Download related materials
         if config.download_materials and detail.xgzl:
-            await _download_materials(fetcher, detail)
+            await _download_materials(client, detail)
 
         return detail
 
@@ -97,46 +90,32 @@ async def process_document(fetcher: Fetcher, row: SearchResultRow) -> DocumentDe
         return None
 
 
-async def _download_document_file(fetcher: Fetcher, detail: DocumentDetail) -> None:
+async def _download_document_file(client: HttpClient, detail: DocumentDetail) -> None:
     """Download the main document file via batch-download API."""
     if await file_exists(detail.title, detail.gbrq, config.download_format):
         logger.debug(f"Document file already exists: {detail.title}")
         return
 
-    items = [{"bbbs": detail.bbbs, "format": config.download_format}]
-    raw = await fetcher.fetch_batch_download_urls(items)
-    dl_resp = parse_batch_download(raw)
-
-    if not dl_resp.data:
+    data = await download_document_bytes(client, detail.bbbs, config.download_format)
+    if data is None:
         logger.warning(f"No download URL returned for: {detail.title}")
         return
 
-    url = dl_resp.data[0].url
-    data = await fetcher.get_bytes(url)
     await save_document_file(detail.title, detail.gbrq, config.download_format, data)
 
 
-async def _download_materials(fetcher: Fetcher, detail: DocumentDetail) -> None:
+async def _download_materials(client: HttpClient, detail: DocumentDetail) -> None:
     """Download all related materials (xgzl) for a document."""
     for mat in detail.xgzl:
         try:
-            raw = await fetcher.fetch_material_detail(mat.file_id, detail.bbbs)
-            mat_detail: MaterialDetail = parse_material_detail(raw)
+            mat_detail = await fetch_material_detail(client, mat.file_id, detail.bbbs)
 
-            if not mat_detail.oss_file_path:
+            dl_url = build_material_download_url(mat_detail)
+            if dl_url is None:
                 logger.warning(f"No file path for material: {mat.title}")
                 continue
 
-            # Build download URL from OSS path
-            # The batch-download API doesn't support materials, so we
-            # construct the OSS URL directly from the path.
-            # We use the download/pc endpoint instead.
-            dl_url = _build_material_download_url(mat_detail)
-            if dl_url is None:
-                logger.warning(f"Cannot build download URL for material: {mat.title}")
-                continue
-
-            data = await fetcher.get_bytes(dl_url)
+            data = await client.get_bytes(dl_url)
             ext = mat.file_type or "docx"
             await save_material_file(mat.title, ext, data)
 
@@ -144,22 +123,7 @@ async def _download_materials(fetcher: Fetcher, detail: DocumentDetail) -> None:
             logger.exception(f"Failed to download material: {mat.title}")
 
 
-def _build_material_download_url(mat: MaterialDetail) -> str | None:
-    """Build a download URL for a material from its OSS path.
-
-    The material detail returns ``ossFilePath`` like
-    ``prod/20201229/xxxx.docx``.  The OSS base URL is the same
-    one used by the batch-download API.
-    """
-    if not mat.oss_file_path:
-        return None
-
-    # OSS bucket base — extracted from batch-download response URLs.
-    oss_base = "https://flkoss.obs-bj2.cucloud.cn"
-    return f"{oss_base}/{mat.oss_file_path}"
-
-
-async def process_historical_versions(fetcher: Fetcher, detail: DocumentDetail) -> list[DocumentDetail | None]:
+async def process_historical_versions(client: HttpClient, detail: DocumentDetail) -> list[DocumentDetail | None]:
     """Fetch and store details for all historical versions (lsyg).
 
     Each historical version has its own ``bbbs`` and can be fetched
@@ -176,25 +140,24 @@ async def process_historical_versions(fetcher: Fetcher, detail: DocumentDetail) 
 
     logger.info(f"Processing {len(historical)} historical versions for: {detail.title}")
 
-    tasks = [_fetch_historical_detail(fetcher, v) for v in historical]
+    tasks = [_fetch_historical_detail(client, v) for v in historical]
     results = await asyncio.gather(*tasks, return_exceptions=True)
     # Filter out BaseException instances from return_exceptions=True
     return [r if isinstance(r, DocumentDetail) else None for r in results]
 
 
-async def _fetch_historical_detail(fetcher: Fetcher, version: HistoricalVersion) -> DocumentDetail | None:
+async def _fetch_historical_detail(client: HttpClient, version: HistoricalVersion) -> DocumentDetail | None:
     """Fetch and store a single historical version."""
     try:
         if await detail_json_exists(version.title, version.gbrq):
             logger.debug(f"Historical detail already saved: {version.title} {version.gbrq}")
             return None
 
-        raw = await fetcher.fetch_detail(version.bbbs)
-        hist_detail = parse_detail(raw)
+        hist_detail = await fetch_detail(client, version.bbbs)
         await save_detail_json(hist_detail)
 
         if config.download_documents and hist_detail.oss_file:
-            await _download_document_file(fetcher, hist_detail)
+            await _download_document_file(client, hist_detail)
 
         logger.info(f"Historical version saved: {version.title} ({version.gbrq})")
         return hist_detail
@@ -208,9 +171,9 @@ async def run_pipeline() -> None:
     """Run the full crawl pipeline."""
     logger.info("Starting judicial-interpretation crawler")
 
-    async with Fetcher() as fetcher:
+    async with HttpClient() as client:
         # 1. Collect all search rows
-        rows = await collect_search_rows(fetcher)
+        rows = await collect_search_rows(client)
         await save_index(rows)
 
         # 2. Process each document (detail + download + historical versions)
@@ -218,9 +181,9 @@ async def run_pipeline() -> None:
 
         async def process_with_sem(row: SearchResultRow) -> None:
             async with sem:
-                detail = await process_document(fetcher, row)
+                detail = await process_document(client, row)
                 if detail is not None:
-                    await process_historical_versions(fetcher, detail)
+                    await process_historical_versions(client, detail)
 
         await asyncio.gather(*(process_with_sem(r) for r in rows))
 
