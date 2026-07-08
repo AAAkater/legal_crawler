@@ -23,8 +23,8 @@ async def fetch_detail(client: HttpClient, bbbs: str) -> DocumentDetail:
     if "title" in data:
         data["title"] = strip_highlight_tags(data["title"])
 
-    # Clean lsyg titles too
-    for item in data.get("lsyg", []):
+    # Clean lsyg titles too. The API may return null for lsyg.
+    for item in data.get("lsyg") or []:
         if "title" in item:
             item["title"] = strip_highlight_tags(item["title"])
 

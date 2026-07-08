@@ -13,7 +13,7 @@ Use as an async context manager::
 """
 
 import asyncio
-from typing import Any
+from typing import Any, Self
 
 import aiohttp
 from tenacity import (
@@ -36,25 +36,37 @@ class HttpClient:
     """
 
     def __init__(self) -> None:
+        """Initialize the client without opening the HTTP session yet."""
         self._session: aiohttp.ClientSession | None = None
         self._semaphore = asyncio.Semaphore(config.max_concurrency)
 
     # ── context-manager protocol ───────────────────────────────────
-    async def __aenter__(self):
+    async def __aenter__(self) -> Self:
+        """Open the shared aiohttp session for this client context."""
         self._session = aiohttp.ClientSession(
             timeout=aiohttp.ClientTimeout(total=config.timeout),
             headers={
                 "Accept": "application/json, text/plain, */*",
+                "Accept-Language": "zh-CN,zh;q=0.9",
+                "Connection": "keep-alive",
                 "Content-Type": "application/json;charset=UTF-8",
+                "Origin": "https://flk.npc.gov.cn",
                 "Referer": "https://flk.npc.gov.cn/search",
+                "Sec-Fetch-Dest": "empty",
+                "Sec-Fetch-Mode": "cors",
+                "Sec-Fetch-Site": "same-origin",
                 "User-Agent": (
                     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36"
                 ),
+                "sec-ch-ua": '"Not;A=Brand";v="8", "Chromium";v="150", "Google Chrome";v="150"',
+                "sec-ch-ua-mobile": "?0",
+                "sec-ch-ua-platform": '"Linux"',
             },
         )
         return self
 
     async def __aexit__(self, *exc: object) -> None:
+        """Close the shared aiohttp session when leaving the client context."""
         if self._session is not None:
             await self._session.close()
             self._session = None
