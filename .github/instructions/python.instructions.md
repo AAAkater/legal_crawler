@@ -10,6 +10,28 @@ applyTo: "**/*.py"
 - **Always use absolute imports**: `from legal_crawler.config import config` — never `from .config import config`.
 - **Do NOT use `from __future__ import annotations`**: Python 3.13 supports `X | Y` natively.
 
+## Naming
+
+- **No pinyin abbreviations in Python identifiers**: Variable names, function parameters, class names, and attribute names must use descriptive English words (e.g. `law_category_ids`, `effectiveness_filter`). Chinese pinyin abbreviations such as `flfg`, `sxx`, `gbrq`, `bbbs`, `zdjg` are **not** allowed in Python-level names.
+- **Pinyin abbreviations belong in `Field(alias=...)` only**: The upstream API returns these pinyin-based field names and we cannot change them. Map them to readable Python names via Pydantic `Field(alias=...)` so that the serialisation layer still produces the correct JSON keys while the Python code stays readable.
+- **Config fields follow the same rule**: Config attribute names like `law_category_ids` or `effectiveness_filter` use English, not pinyin.
+
+Examples:
+
+```python
+# ✅ Correct — English names, alias maps to API pinyin key
+class SearchResultRow(BaseModel):
+    law_code_id: int = Field(alias="flfgCodeId")
+    effectiveness: int | None = Field(default=None, alias="sxx")
+
+# ✅ Correct — local variable uses English
+effective_category_ids = law_category_ids or config.law_category_ids
+
+# ❌ Wrong — pinyin abbreviation in Python identifier
+flfg_code_ids: list[int]
+effective_sxx: list[int]
+```
+
 ## Logging
 
 - **Use `loguru`**: never use the stdlib `logging` module.
