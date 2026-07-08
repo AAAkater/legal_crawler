@@ -31,16 +31,16 @@ class CrawlerConfig(BaseSettings):
     material_detail_path: str = "/law-search/search/xgzlDetails"
 
     # ── Search parameters ──────────────────────────────────────────
-    # flfgCodeId=311 → 司法解释 (parent), covers 320/330/340/350 children.
-    flfg_code_ids: list[int] = Field(
-        default_factory=lambda: [311],
-        description="法律法规分类 code IDs. 311 = 司法解释 (all sub-categories).",
+    # flfgCodeId=311 → 司法解释 (parent); 320/330/340/350 are child categories.
+    law_category_ids: list[int] = Field(
+        default_factory=lambda: [311, 320, 330, 340, 350],
+        description="法律法规分类 code IDs. 311 = 司法解释; 320/330/340/350 = child categories.",
     )
     page_size: int = 20
-    # Fetch all sxx statuses so we capture effective, modified, and repealed.
-    sxx_filter: list[int] = Field(
-        default_factory=lambda: [1, 2, 3],
-        description="时效性 filter: 1=已废止, 2=已修改, 3=有效.",
+    # Empty list matches the site search request and fetches all statuses.
+    effectiveness_filter: list[int] = Field(
+        default_factory=list,
+        description="时效性 filter: []=全部, 1=已废止, 2=已修改, 3=有效.",
     )
 
     # ── Concurrency & rate limiting ────────────────────────────────

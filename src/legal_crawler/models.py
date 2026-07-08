@@ -14,7 +14,6 @@ For DPO dataset construction:
 """
 
 from enum import IntEnum
-from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -26,6 +25,32 @@ class Effectiveness(IntEnum):
     MODIFIED = 2  # 已修改
     EFFECTIVE = 3  # 有效
     # NOTE: ``None`` means the item is a 修改、废止的决定 (no status code).
+
+
+class OrderByParam(BaseModel):
+    """Order-by parameter for the ``/law-search/search/list`` request."""
+
+    order: str = Field(default="-1")
+    sort: str = Field(default="")
+
+
+class SearchListRequest(BaseModel):
+    """Request payload for ``/law-search/search/list``."""
+
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
+
+    search_range: int = Field(default=1, alias="searchRange")
+    effective_dates: list[str] = Field(default_factory=list, alias="sxrq")
+    publish_dates: list[str] = Field(default_factory=list, alias="gbrq")
+    search_type: int = Field(default=2, alias="searchType")
+    effectiveness_filter: list[int] = Field(default_factory=list, alias="sxx")
+    publish_years: list[str] = Field(default_factory=list, alias="gbrqYear")
+    law_category_ids: list[int] = Field(alias="flfgCodeId")
+    authority_ids: list[int] = Field(default_factory=list, alias="zdjgCodeId")
+    search_content: str = Field(default="", alias="searchContent")
+    order_by: OrderByParam = Field(default_factory=OrderByParam, alias="orderByParam")
+    page_num: int = Field(alias="pageNum")
+    page_size: int = Field(alias="pageSize")
 
 
 class OssFile(BaseModel):
@@ -71,7 +96,7 @@ class RelatedMaterial(BaseModel):
     title_highlight: str | None = Field(default=None, alias="titleHighLight")
     business_type: str = Field(alias="busiType")
     file_type: str = Field(alias="fileType")
-    title_highlight_list: list[dict[str, Any]] | None = Field(default=None, alias="titleHightLightList")
+    title_highlight_list: list[dict[str, object]] | None = Field(default=None, alias="titleHightLightList")
 
 
 class SearchResultRow(BaseModel):
